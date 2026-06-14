@@ -4,6 +4,7 @@ import pandas as pd
 from datetime import datetime, timedelta
 import uuid
 import io
+import plotly.express as px
 
 # Configuração da página (deve ser sempre o primeiro comando)
 st.set_page_config(page_title="Regulação UBS", layout="wide", page_icon="🏥")
@@ -75,7 +76,7 @@ if check_password():
     aba_painel, aba_busca = st.tabs(["🏥 Painel de Controle", "🔍 Busca Avançada & Relatórios"])
 
     # ==========================================
-    # ABA 1: PAINEL DE CONTROLE (DASHBOARD + CADASTRO ABERTO)
+    # ABA 1: PAINEL DE CONTROLE (DASHBOARD + CADASTRO ABERTO + GRÁFICO)
     # ==========================================
     with aba_painel:
         data_hoje = datetime.now()
@@ -94,12 +95,10 @@ if check_password():
             cant_concluidos = len(df_concluidos)
             cant_total = len(df_total)
             
-            # Cálculos de Porcentagem (Prevenção de divisão por zero)
             pct_no_prazo = (cant_no_prazo / cant_total * 100) if cant_total > 0 else 0
             pct_vencidos = (cant_vencidos / cant_total * 100) if cant_total > 0 else 0
             pct_adiados = (cant_adiados / cant_total * 100) if cant_total > 0 else 0
             pct_concluidos = (cant_concluidos / cant_total * 100) if cant_total > 0 else 0
-            
         else:
             df_no_prazo = df_vencidos = df_adiados = df_total = df_concluidos = pd.DataFrame()
             cant_no_prazo = cant_vencidos = cant_adiados = cant_concluidos = cant_total = 0
@@ -108,11 +107,10 @@ if check_password():
         if 'filtro_dashboard' not in st.session_state:
             st.session_state['filtro_dashboard'] = 'vencidos'
 
-        # Renderização dos cartões clicáveis (Agora com porcentagens)
-        st.markdown("### 📊 Indicadores de Regulação (Clique para filtrar a lista abaixo)")
+        # Renderização dos cartões clicáveis
+        st.markdown("### 📊 Indicadores de Regulação (Clique para filtrar)")
         col_m1, col_m2, col_m3, col_m4, col_m5 = st.columns(5)
         
-        # Formatação HTML para o número grande e a porcentagem menor logo abaixo
         estilo_numero = "margin-bottom: -5px; margin-top: 5px;"
         estilo_pct = "font-size: 16px; color: #7f8c8d; font-weight: normal; margin-top: 0px;"
         
@@ -123,12 +121,12 @@ if check_password():
                 
         with col_m2:
             st.markdown(f"<h3 style='text-align: center; color: #e74c3c; {estilo_numero}'>{cant_vencidos}</h3><p style='text-align: center; {estilo_pct}'>({pct_vencidos:.1f}%)</p>", unsafe_allow_html=True)
-            if st.button("🔴 Vencidos / Verificar", key="btn_m2", use_container_width=True):
+            if st.button("🔴 Vencidos", key="btn_m2", use_container_width=True):
                 st.session_state['filtro_dashboard'] = 'vencidos'
                 
         with col_m3:
             st.markdown(f"<h3 style='text-align: center; color: #f39c12; {estilo_numero}'>{cant_adiados}</h3><p style='text-align: center; {estilo_pct}'>({pct_adiados:.1f}%)</p>", unsafe_allow_html=True)
-            if st.button("⏳ Adiados / Pausados", key="btn_m3", use_container_width=True):
+            if st.button("⏳ Adiados", key="btn_m3", use_container_width=True):
                 st.session_state['filtro_dashboard'] = 'adiados'
                 
         with col_m4:
@@ -138,49 +136,78 @@ if check_password():
 
         with col_m5:
             st.markdown(f"<h3 style='text-align: center; color: #34495e; {estilo_numero}'>{cant_total}</h3><p style='text-align: center; {estilo_pct}'>(100%)</p>", unsafe_allow_html=True)
-            if st.button("📋 Total Geral", key="btn_m5", use_container_width=True):
+            if st.button("📋 Total", key="btn_m5", use_container_width=True):
                 st.session_state['filtro_dashboard'] = 'total'
 
+        st.divider()
+
         # ==========================================
-        # SEÇÃO FIXA E SEMPRE ABERTA: CADASTRO RÁPIDO
+        # SEÇÃO DIVIDIDA: CADASTRO (ESQUERDA) | GRÁFICO (DIREITA)
         # ==========================================
-        st.markdown("<br>", unsafe_allow_html=True)
-        with st.expander("➕ CADASTRO RÁPIDO: Adicionar Novo Protocolo", expanded=True):
-            with st.form("form_novo_protocolo_direto", clear_on_submit=True):
-                col_c1, col_c2 = st.columns(2)
-                numero = col_c1.text_input("Número do Protocolo/SISREG *")
-                paciente = col_c2.text_input("Primeiro Nome do Paciente *")
+        col_cadastro, col_grafico = st.columns([1.8, 1.2])
+
+        with col_cadastro:
+            with st.expander("➕ CADASTRO RÁPIDO: Adicionar Novo Protocolo", expanded=True):
+                with st.form("form_novo_protocolo_direto", clear_on_submit=True):
+                    col_c1, col_c2 = st.columns(2)
+                    numero = col_c1.text_input("Número do Protocolo/SISREG *")
+                    paciente = col_c2.text_input("Primeiro Nome do Paciente *")
+                    
+                    col_c3, col_c4 = st.columns(2)
+                    servico = col_c3.text_input("Tipo de Serviço (Ex: Tomografia) *")
+                    interno = col_c4.text_input("Interno Responsável (Opcional)")
+                    
+                    submit = st.form_submit_button("Gravar e Atualizar Sistema", use_container_width=True)
+                    
+                    if submit and numero and paciente and servico:
+                        numero_limpo = str(numero).strip().split('.')[0]
+                        if not df.empty and numero_limpo in df['Protocolo'].astype(str).values:
+                            st.error(f"❌ O protocolo {numero_limpo} já foi cadastrado anteriormente!")
+                        else:
+                            data_atual = datetime.now().strftime("%Y-%m-%d")
+                            novo_id = str(uuid.uuid4())[:8] 
+                            nova_linha = pd.DataFrame([{
+                                "ID": novo_id, "Protocolo": numero_limpo, "Servico": servico.upper(),
+                                "Paciente": paciente.upper(), "Data": data_atual, "Status": "Pendente",
+                                "Interno": interno, "Observacoes": "", "Data_Retorno": "", "Prioridade_Regulacao": ""
+                            }])
+                            df_atualizado = pd.concat([df, nova_linha], ignore_index=True)
+                            df_atualizado = df_atualizado.drop(columns=['Data_Convertida', 'Data_Retorno_DT'], errors='ignore')
+                            conn.update(worksheet="Dados", data=df_atualizado)
+                            st.success("✅ Protocolo cadastrado com sucesso!")
+                            st.rerun()
+
+        with col_grafico:
+            st.markdown("<h4 style='text-align: center; margin-top: 0px;'>Distribuição de Protocolos</h4>", unsafe_allow_html=True)
+            if cant_total > 0:
+                df_pie = pd.DataFrame({
+                    'Categoria': ['No Prazo', 'Vencidos', 'Adiados', 'Concluídos'],
+                    'Quantidade': [cant_no_prazo, cant_vencidos, cant_adiados, cant_concluidos]
+                })
+                # Filtra os que tem 0 para o gráfico não ficar esquisito
+                df_pie = df_pie[df_pie['Quantidade'] > 0]
                 
-                col_c3, col_c4 = st.columns(2)
-                servico = col_c3.text_input("Tipo de Serviço (Ex: Tomografia) *")
-                interno = col_c4.text_input("Interno Responsável (Opcional)")
+                # Cores mapeadas igual aos botões
+                cores_map = {
+                    'No Prazo': '#2ecc71',
+                    'Vencidos': '#e74c3c',
+                    'Adiados': '#f39c12',
+                    'Concluídos': '#9b59b6'
+                }
                 
-                submit = st.form_submit_button("Gravar e Atualizar Sistema", use_container_width=True)
+                fig = px.pie(df_pie, names='Categoria', values='Quantidade', hole=0.45,
+                             color='Categoria', color_discrete_map=cores_map)
                 
-                if submit and numero and paciente and servico:
-                    numero_limpo = str(numero).strip().split('.')[0]
-                    protocolo_existe = False
-                    if not df.empty:
-                        protocolo_existe = numero_limpo in df['Protocolo'].astype(str).values
-                        
-                    if protocolo_existe:
-                        st.error(f"❌ O protocolo {numero_limpo} já foi cadastrado anteriormente!")
-                    else:
-                        data_atual = datetime.now().strftime("%Y-%m-%d")
-                        novo_id = str(uuid.uuid4())[:8] 
-                        
-                        nova_linha = pd.DataFrame([{
-                            "ID": novo_id, "Protocolo": numero_limpo, "Servico": servico.upper(),
-                            "Paciente": paciente.upper(), "Data": data_atual, "Status": "Pendente",
-                            "Interno": interno, "Observacoes": "", "Data_Retorno": "", "Prioridade_Regulacao": ""
-                        }])
-                        
-                        df_atualizado = pd.concat([df, nova_linha], ignore_index=True)
-                        df_atualizado = df_atualizado.drop(columns=['Data_Convertida', 'Data_Retorno_DT'], errors='ignore')
-                            
-                        conn.update(worksheet="Dados", data=df_atualizado)
-                        st.success("✅ Protocolo cadastrado com sucesso!")
-                        st.rerun()
+                fig.update_layout(
+                    margin=dict(t=10, b=10, l=10, r=10),
+                    height=260,
+                    showlegend=True,
+                    legend=dict(orientation="h", yanchor="bottom", y=-0.2, xanchor="center", x=0.5)
+                )
+                fig.update_traces(textposition='inside', textinfo='percent+label')
+                st.plotly_chart(fig, use_container_width=True)
+            else:
+                st.info("Cadastre dados para visualizar o gráfico.")
 
         st.divider()
 
@@ -193,10 +220,10 @@ if check_password():
             st.markdown("### 🟢 Protocolos Aguardando Regulação (Dentro do Prazo de 15 dias)")
             df_lista = df_no_prazo
         elif situacao == 'vencidos':
-            st.markdown("### 🔴 Pendentes de Verificação (Mais de 15 dias sem desfecho/adiamento)")
+            st.markdown("### 🔴 Pendentes de Verificação (Mais de 15 dias)")
             df_lista = df_vencidos
         elif situacao == 'adiados':
-            st.markdown("### ⏳ Protocolos Adiados (Aguardando Retorno Stipulado)")
+            st.markdown("### ⏳ Protocolos Adiados (Aguardando Retorno)")
             df_lista = df_adiados
         elif situacao == 'total':
             st.markdown("### 📋 Histórico Geral Completo")
@@ -224,12 +251,10 @@ if check_password():
                 info_interno = f" | Interno: {row['Interno']}" if pd.notna(row['Interno']) and str(row['Interno']).strip() != "" else ""
                 
                 with st.expander(f"{tag_status} | {row['Paciente']} | Espera: {dias_espera} dias{info_interno}"):
-                    # Divisão em 3 colunas em vez de 2, para isolar e apertar o código do protocolo
                     col_prot, col_info, col_acoes = st.columns([1, 1.5, 2.5])
                     
                     with col_prot:
                         st.markdown("**Protocolo:**")
-                        # Por estar em uma coluna estreita, o botão de copiar fica encostado no número
                         st.code(row['Protocolo'], language=None)
 
                     with col_info:
@@ -275,7 +300,7 @@ if check_password():
     # ABA 2: BUSCA AVANÇADA E RELATÓRIOS
     # ==========================================
     with aba_busca:
-        st.header("🔍 Buscar e Exportar Dados")
+        st.header("🔍 Buscar, Filtrar e Exportar Dados")
         if not df.empty:
             c_busca1, c_busca2, c_busca3 = st.columns(3)
             texto_busca = c_busca1.text_input("Buscar Nome, Protocolo ou Interno:")
@@ -299,11 +324,17 @@ if check_password():
             if mes_busca != "Todos":
                 df_busca = df_busca[df_busca['Mes_Ano'] == mes_busca]
 
-            st.write(f"**Registros encontrados:** {len(df_busca)}")
-            
-            if df_busca.empty:
-                st.warning("Nenhum registro encontrado.")
-            else:
+            # ------------------------------------------
+            # CAIXA DE RESUMO ESTATÍSTICO DO FILTRO
+            # ------------------------------------------
+            if not df_busca.empty:
+                b_no_prazo = len(df_busca[(df_busca['Status'] == 'Pendente') & (df_busca['Data_Convertida'] > data_15_dias_atras)])
+                b_vencidos = len(df_busca[(df_busca['Status'] == 'Pendente') & (df_busca['Data_Convertida'] <= data_15_dias_atras)])
+                b_adiados = len(df_busca[df_busca['Status'] == 'Adiado'])
+                b_concluidos = len(df_busca[df_busca['Status'] == 'Concluido'])
+                
+                st.success(f"**Resumo do Filtro:** Dos **{len(df_busca)}** cadastrados localizados, **{b_concluidos}** foram concluídos (passaram direto), **{b_no_prazo}** estão no prazo, **{b_adiados}** estão adiados e **{b_vencidos}** estão vencidos.")
+                
                 colunas_exibicao = ['Protocolo', 'Paciente', 'Servico', 'Data', 'Status', 'Interno', 'Prioridade_Regulacao', 'Observacoes']
                 st.dataframe(df_busca[colunas_exibicao], use_container_width=True)
 
@@ -318,3 +349,5 @@ if check_password():
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                     use_container_width=True
                 )
+            else:
+                st.warning("Nenhum registro encontrado com os filtros atuais.")
