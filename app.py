@@ -55,82 +55,84 @@ if check_password():
             if col not in df.columns:
                 df[col] = ""
         
-        # Correção definitiva do bug do ".0" nos números de protocolo
+        # Remoção do ".0" residual de conversões automáticas do Excel/Sheets
         df['Protocolo'] = df['Protocolo'].astype(str).apply(lambda x: x.split('.')[0] if x.endswith('.0') else x)
         df['Data_Convertida'] = pd.to_datetime(df['Data'], errors='coerce')
         df['Data_Retorno_DT'] = pd.to_datetime(df['Data_Retorno'], errors='coerce')
 
-    # Organização das Abas Principais (Novo Protocolo agora está integrado no Painel)
-    aba_painel, aba_busca = st.tabs(["🏥 Painel de Controle & Cadastro", "🔍 Busca Avançada & Relatórios"])
+    # Abas Principais
+    aba_painel, aba_busca = st.tabs(["🏥 Painel de Controle", "🔍 Busca Avançada & Relatórios"])
 
     # ==========================================
-    # ABA 1: PAINEL DE CONTROLE (DASHBOARD + CADASTRO)
+    # ABA 1: PAINEL DE CONTROLE (DASHBOARD + CADASTRO ABERTO)
     # ==========================================
     with aba_painel:
         data_hoje = datetime.now()
         data_15_dias_atras = data_hoje - timedelta(days=15)
 
-        # Separação estrita dos 4 grupos conforme solicitado
         if not df.empty:
-            # 1. No Prazo e Pendente (<= 15 dias)
+            # 1. No Prazo (Pendente <= 15 dias)
             df_no_prazo = df[(df['Status'] == 'Pendente') & (df['Data_Convertida'] > data_15_dias_atras)]
             
-            # 2. Fora do Prazo / Adiados (> 15 dias ou marcados como Adiado)
-            df_fora_prazo = df[(df['Status'] == 'Adiado') | ((df['Status'] == 'Pendente') & (df['Data_Convertida'] <= data_15_dias_atras))]
+            # 2. Vencidos / Pendentes de Verificação (Pendente > 15 dias)
+            df_vencidos = df[(df['Status'] == 'Pendente') & (df['Data_Convertida'] <= data_15_dias_atras)]
             
-            # FILTRO DE EXIBIÇÃO: Oculta temporariamente os adiados cuja data de retorno não chegou
-            df_fora_prazo_exibicao = df[
-                ((df['Status'] == 'Pendente') & (df['Data_Convertida'] <= data_15_dias_atras)) |
-                ((df['Status'] == 'Adiado') & (df['Data_Retorno_DT'] <= data_hoje))
-            ]
+            # 3. Adiados (Status explícito como Adiado)
+            df_adiados = df[df['Status'] == 'Adiado']
             
-            # 3. Total Geral de Cadastrados
-            df_total = df.copy()
-            
-            # 4. Concluídos / Finalizados
+            # 4. Concluídos
             df_concluidos = df[df['Status'] == 'Concluido']
+            
+            # 5. Total
+            df_total = df.copy()
 
             cant_no_prazo = len(df_no_prazo)
-            cant_fora_prazo = len(df_fora_prazo)
-            cant_total = len(df_total)
+            cant_vencidos = len(df_vencidos)
+            cant_adiados = len(df_adiados)
             cant_concluidos = len(df_concluidos)
+            cant_total = len(df_total)
         else:
-            df_no_prazo = df_fora_prazo = df_fora_prazo_exibicao = df_total = df_concluidos = pd.DataFrame()
-            cant_no_prazo = cant_fora_prazo = cant_total = cant_concluidos = 0
+            df_no_prazo = df_vencidos = df_adiados = df_total = df_concluidos = pd.DataFrame()
+            cant_no_prazo = cant_vencidos = cant_adiados = cant_concluidos = cant_total = 0
 
-        # Estado da sessão para controlar qual categoria está ativa na tela
+        # Estado padrão focado em exibir primeiro os que venceram os 15 dias e aguardam verificação
         if 'filtro_dashboard' not in st.session_state:
-            st.session_state['filtro_dashboard'] = 'fora_prazo'  # Padrão focado em pendências críticas
+            st.session_state['filtro_dashboard'] = 'vencidos'
 
-        # Renderização dos cartões clicáveis no Dashboard
-        st.markdown("### 📊 Visão Geral (Clique para filtrar a listagem abaixo)")
-        col_m1, col_m2, col_m3, col_m4 = st.columns(4)
+        # Renderização dos cartões clicáveis (Dashboard com 5 Colunas)
+        st.markdown("### 📊 Indicadores de Regulação (Clique para filtrar a lista abaixo)")
+        col_m1, col_m2, col_m3, col_m4, col_m5 = st.columns(5)
         
         with col_m1:
             st.markdown(f"<h3 style='text-align: center; color: #2ecc71; margin-bottom: 0;'>{cant_no_prazo}</h3>", unsafe_allow_html=True)
-            if st.button("⏳ Aguardando (No Prazo)", key="btn_m1", use_container_width=True):
+            if st.button("🟢 No Prazo (<15d)", key="btn_m1", use_container_width=True):
                 st.session_state['filtro_dashboard'] = 'no_prazo'
                 
         with col_m2:
-            st.markdown(f"<h3 style='text-align: center; color: #e74c3c; margin-bottom: 0;'>{cant_fora_prazo}</h3>", unsafe_allow_html=True)
-            if st.button("🚨 Adiados / Fora do Prazo", key="btn_m2", use_container_width=True):
-                st.session_state['filtro_dashboard'] = 'fora_prazo'
+            st.markdown(f"<h3 style='text-align: center; color: #e74c3c; margin-bottom: 0;'>{cant_vencidos}</h3>", unsafe_allow_html=True)
+            if st.button("🔴 Vencidos / Verificar", key="btn_m2", use_container_width=True):
+                st.session_state['filtro_dashboard'] = 'vencidos'
                 
         with col_m3:
-            st.markdown(f"<h3 style='text-align: center; color: #34495e; margin-bottom: 0;'>{cant_total}</h3>", unsafe_allow_html=True)
-            if st.button("📋 Total Cadastrados", key="btn_m3", use_container_width=True):
-                st.session_state['filtro_dashboard'] = 'total'
+            st.markdown(f"<h3 style='text-align: center; color: #f39c12; margin-bottom: 0;'>{cant_adiados}</h3>", unsafe_allow_html=True)
+            if st.button("⏳ Adiados / Pausados", key="btn_m3", use_container_width=True):
+                st.session_state['filtro_dashboard'] = 'adiados'
                 
         with col_m4:
             st.markdown(f"<h3 style='text-align: center; color: #9b59b6; margin-bottom: 0;'>{cant_concluidos}</h3>", unsafe_allow_html=True)
-            if st.button("✅ Concluídos / Regulados", key="btn_m4", use_container_width=True):
+            if st.button("✅ Concluídos", key="btn_m4", use_container_width=True):
                 st.session_state['filtro_dashboard'] = 'concluidos'
 
+        with col_m5:
+            st.markdown(f"<h3 style='text-align: center; color: #34495e; margin-bottom: 0;'>{cant_total}</h3>", unsafe_allow_html=True)
+            if st.button("📋 Total Geral", key="btn_m5", use_container_width=True):
+                st.session_state['filtro_dashboard'] = 'total'
+
         # ==========================================
-        # SEÇÃO INTEGRADA: CADASTRO DE NOVO PROTOCOLO
+        # SEÇÃO FIXA E SEMPRE ABERTA: CADASTRO RÁPIDO
         # ==========================================
         st.markdown("<br>", unsafe_allow_html=True)
-        with st.expander("➕ CADASTRO RÁPIDO: Adicionar Novo Protocolo", expanded=False):
+        with st.expander("➕ CADASTRO RÁPIDO: Adicionar Novo Protocolo", expanded=True):
             with st.form("form_novo_protocolo_direto", clear_on_submit=True):
                 col_c1, col_c2 = st.columns(2)
                 numero = col_c1.text_input("Número do Protocolo/SISREG *")
@@ -170,52 +172,56 @@ if check_password():
         st.divider()
 
         # ==========================================
-        # EXIBIÇÃO DINÂMICA DA SITUAÇÃO SELECIONADA
+        # EXIBIÇÃO FILTRADA DA CATEGORIA SELECIONADA
         # ==========================================
         situacao = st.session_state['filtro_dashboard']
         
         if situacao == 'no_prazo':
             st.markdown("### 🟢 Protocolos Aguardando Regulação (Dentro do Prazo de 15 dias)")
             df_lista = df_no_prazo
-        elif situacao == 'fora_prazo':
-            st.markdown("### 🔴 Alertas Ativos: Fora do Prazo ou Retorno de Adiamento")
-            df_lista = df_fora_prazo_exibicao
+        elif situacao == 'vencidos':
+            st.markdown("### 🔴 Pendentes de Verificação (Mais de 15 dias sem desfecho/adiamento)")
+            df_lista = df_vencidos
+        elif situacao == 'adiados':
+            st.markdown("### ⏳ Protocolos Adiados (Aguardando Retorno Stipulado)")
+            df_lista = df_adiados
         elif situacao == 'total':
-            st.markdown("### 📋 Histórico Geral Completo (Todos os Status)")
+            st.markdown("### 📋 Histórico Geral Completo")
             df_lista = df_total
         elif situacao == 'concluidos':
-            st.markdown("### ✅ Protocolos Finalizados / Regulados")
+            st.markdown("### ✅ Protocolos Finalizados")
             df_lista = df_concluidos
 
         if df_lista.empty:
-            st.info("Nenhum registro encontrado para a situação selecionada.")
+            st.info("Nenhum registro encontrado para esta categoria.")
         else:
             for index, row in df_lista.iterrows():
                 dias_espera = (data_hoje - row['Data_Convertida']).days if pd.notna(row['Data_Convertida']) else 0
                 
-                # Definição de tags e cores visuais para cada cartão
+                # Regras visuais customizadas para cada item listado
                 if row['Status'] == 'Concluido':
                     tag_status = f"✅ FINALIZADO" + (f" [Prioridade {row['Prioridade_Regulacao']}]" if row['Prioridade_Regulacao'] else "")
                 elif row['Status'] == 'Adiado':
-                    tag_status = "⏳ ADIADO (Aguardando Prazo)"
+                    if pd.notna(row['Data_Retorno_DT']) and row['Data_Retorno_DT'] <= data_hoje:
+                        tag_status = "⚠️ ADIAMENTO EXPIRADO (Rever Caso)"
+                    else:
+                        tag_status = f"⏳ ADIADO (Retorna em {row['Data_Retorno_DT'].strftime('%d/%m/%Y') if pd.notna(row['Data_Retorno_DT']) else 'N/A'})"
                 else:
-                    tag_status = "🔴 CRÍTICO (>30 dias)" if dias_espera > 30 else "🟠 FORA DO PRAZO" if dias_espera > 15 else "🟢 NO PRAZO"
+                    tag_status = "🔴 VENCIDO" if dias_espera > 15 else "🟢 NO PRAZO"
 
                 info_interno = f" | Interno: {row['Interno']}" if pd.notna(row['Interno']) and str(row['Interno']).strip() != "" else ""
                 
                 with st.expander(f"{tag_status} | {row['Paciente']} | Espera: {dias_espera} dias{info_interno}"):
-                    col_info, col_acoes = st.columns([1.5, 2])
+                    col_info, col_acoes = st.columns([1.8, 2])
                     
                     with col_info:
-                        st.write("**Código do Protocolo (Clique no ícone à direita para copiar):**")
+                        st.markdown("**Copiar Número do Protocolo:**")
+                        # Caixa fixada com botão de cópia nativo permanente à direita
                         st.code(row['Protocolo'], language=None)
                         st.write(f"**Serviço:** {row['Servico']}")
                         st.write(f"**Data da Solicitação:** {row['Data_Convertida'].strftime('%d/%m/%Y') if pd.notna(row['Data_Convertida']) else 'N/A'}")
-                        if row['Status'] == 'Adiado' and pd.notna(row['Data_Retorno_DT']):
-                            st.write(f"**Retorna ao painel em:** {row['Data_Retorno_DT'].strftime('%d/%m/%Y')}")
 
                     with col_acoes:
-                        # Exibe formulários de ação apenas se não estiver concluído
                         if row['Status'] != 'Concluido':
                             obs_atual = row['Observacoes'] if pd.notna(row['Observacoes']) else ""
                             nova_obs = st.text_area("Anotações / Evolução do Caso:", value=obs_atual, key=f"obs_{row['ID']}", height=68)
@@ -251,7 +257,7 @@ if check_password():
                             st.info(f"Protocolo finalizado. Notas registradas: {row['Observacoes'] if row['Observacoes'] else 'Nenhuma'}")
 
     # ==========================================
-    # ABA 2: BUSCA AVANÇADA E RELATÓRIOS (MANTIDA INTEGRALMENTE)
+    # ABA 2: BUSCA AVANÇADA E RELATÓRIOS
     # ==========================================
     with aba_busca:
         st.header("🔍 Buscar e Exportar Dados")
