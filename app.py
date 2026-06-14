@@ -67,6 +67,10 @@ if check_password():
         for col in colunas_necessarias:
             if col not in df.columns:
                 df[col] = ""
+            
+            # CORREÇÃO DO ERRO APLICADA AQUI:
+            # Preenche os vazios e garante que a coluna seja lida como texto desde o início
+            df[col] = df[col].fillna("").astype(str).replace("nan", "")
         
         df['Protocolo'] = df['Protocolo'].astype(str).apply(lambda x: x.split('.')[0] if x.endswith('.0') else x)
         df['Data_Convertida'] = pd.to_datetime(df['Data'], errors='coerce')
