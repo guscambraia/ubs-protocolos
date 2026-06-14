@@ -8,6 +8,18 @@ import io
 # Configuração da página (deve ser sempre o primeiro comando)
 st.set_page_config(page_title="Regulação UBS", layout="wide", page_icon="🏥")
 
+# Injeção de CSS customizado para manter o botão de copiar sempre visível
+st.markdown("""
+    <style>
+    /* Força o botão de copiar do st.code a ficar sempre visível e opaco */
+    [data-testid="stCodeBlock"] button {
+        opacity: 1 !important;
+        visibility: visible !important;
+        transform: none !important;
+    }
+    </style>
+""", unsafe_allow_html=True)
+
 # ------------------------------------------------
 # FUNÇÃO DO SISTEMA DE LOGIN
 # ------------------------------------------------
@@ -55,7 +67,6 @@ if check_password():
             if col not in df.columns:
                 df[col] = ""
         
-        # Remoção do ".0" residual de conversões automáticas do Excel/Sheets
         df['Protocolo'] = df['Protocolo'].astype(str).apply(lambda x: x.split('.')[0] if x.endswith('.0') else x)
         df['Data_Convertida'] = pd.to_datetime(df['Data'], errors='coerce')
         df['Data_Retorno_DT'] = pd.to_datetime(df['Data_Retorno'], errors='coerce')
@@ -71,19 +82,10 @@ if check_password():
         data_15_dias_atras = data_hoje - timedelta(days=15)
 
         if not df.empty:
-            # 1. No Prazo (Pendente <= 15 dias)
             df_no_prazo = df[(df['Status'] == 'Pendente') & (df['Data_Convertida'] > data_15_dias_atras)]
-            
-            # 2. Vencidos / Pendentes de Verificação (Pendente > 15 dias)
             df_vencidos = df[(df['Status'] == 'Pendente') & (df['Data_Convertida'] <= data_15_dias_atras)]
-            
-            # 3. Adiados (Status explícito como Adiado)
             df_adiados = df[df['Status'] == 'Adiado']
-            
-            # 4. Concluídos
             df_concluidos = df[df['Status'] == 'Concluido']
-            
-            # 5. Total
             df_total = df.copy()
 
             cant_no_prazo = len(df_no_prazo)
@@ -91,40 +93,51 @@ if check_password():
             cant_adiados = len(df_adiados)
             cant_concluidos = len(df_concluidos)
             cant_total = len(df_total)
+            
+            # Cálculos de Porcentagem (Prevenção de divisão por zero)
+            pct_no_prazo = (cant_no_prazo / cant_total * 100) if cant_total > 0 else 0
+            pct_vencidos = (cant_vencidos / cant_total * 100) if cant_total > 0 else 0
+            pct_adiados = (cant_adiados / cant_total * 100) if cant_total > 0 else 0
+            pct_concluidos = (cant_concluidos / cant_total * 100) if cant_total > 0 else 0
+            
         else:
             df_no_prazo = df_vencidos = df_adiados = df_total = df_concluidos = pd.DataFrame()
             cant_no_prazo = cant_vencidos = cant_adiados = cant_concluidos = cant_total = 0
+            pct_no_prazo = pct_vencidos = pct_adiados = pct_concluidos = 0.0
 
-        # Estado padrão focado em exibir primeiro os que venceram os 15 dias e aguardam verificação
         if 'filtro_dashboard' not in st.session_state:
             st.session_state['filtro_dashboard'] = 'vencidos'
 
-        # Renderização dos cartões clicáveis (Dashboard com 5 Colunas)
+        # Renderização dos cartões clicáveis (Agora com porcentagens)
         st.markdown("### 📊 Indicadores de Regulação (Clique para filtrar a lista abaixo)")
         col_m1, col_m2, col_m3, col_m4, col_m5 = st.columns(5)
         
+        # Formatação HTML para o número grande e a porcentagem menor logo abaixo
+        estilo_numero = "margin-bottom: -5px; margin-top: 5px;"
+        estilo_pct = "font-size: 16px; color: #7f8c8d; font-weight: normal; margin-top: 0px;"
+        
         with col_m1:
-            st.markdown(f"<h3 style='text-align: center; color: #2ecc71; margin-bottom: 0;'>{cant_no_prazo}</h3>", unsafe_allow_html=True)
+            st.markdown(f"<h3 style='text-align: center; color: #2ecc71; {estilo_numero}'>{cant_no_prazo}</h3><p style='text-align: center; {estilo_pct}'>({pct_no_prazo:.1f}%)</p>", unsafe_allow_html=True)
             if st.button("🟢 No Prazo (<15d)", key="btn_m1", use_container_width=True):
                 st.session_state['filtro_dashboard'] = 'no_prazo'
                 
         with col_m2:
-            st.markdown(f"<h3 style='text-align: center; color: #e74c3c; margin-bottom: 0;'>{cant_vencidos}</h3>", unsafe_allow_html=True)
+            st.markdown(f"<h3 style='text-align: center; color: #e74c3c; {estilo_numero}'>{cant_vencidos}</h3><p style='text-align: center; {estilo_pct}'>({pct_vencidos:.1f}%)</p>", unsafe_allow_html=True)
             if st.button("🔴 Vencidos / Verificar", key="btn_m2", use_container_width=True):
                 st.session_state['filtro_dashboard'] = 'vencidos'
                 
         with col_m3:
-            st.markdown(f"<h3 style='text-align: center; color: #f39c12; margin-bottom: 0;'>{cant_adiados}</h3>", unsafe_allow_html=True)
+            st.markdown(f"<h3 style='text-align: center; color: #f39c12; {estilo_numero}'>{cant_adiados}</h3><p style='text-align: center; {estilo_pct}'>({pct_adiados:.1f}%)</p>", unsafe_allow_html=True)
             if st.button("⏳ Adiados / Pausados", key="btn_m3", use_container_width=True):
                 st.session_state['filtro_dashboard'] = 'adiados'
                 
         with col_m4:
-            st.markdown(f"<h3 style='text-align: center; color: #9b59b6; margin-bottom: 0;'>{cant_concluidos}</h3>", unsafe_allow_html=True)
+            st.markdown(f"<h3 style='text-align: center; color: #9b59b6; {estilo_numero}'>{cant_concluidos}</h3><p style='text-align: center; {estilo_pct}'>({pct_concluidos:.1f}%)</p>", unsafe_allow_html=True)
             if st.button("✅ Concluídos", key="btn_m4", use_container_width=True):
                 st.session_state['filtro_dashboard'] = 'concluidos'
 
         with col_m5:
-            st.markdown(f"<h3 style='text-align: center; color: #34495e; margin-bottom: 0;'>{cant_total}</h3>", unsafe_allow_html=True)
+            st.markdown(f"<h3 style='text-align: center; color: #34495e; {estilo_numero}'>{cant_total}</h3><p style='text-align: center; {estilo_pct}'>(100%)</p>", unsafe_allow_html=True)
             if st.button("📋 Total Geral", key="btn_m5", use_container_width=True):
                 st.session_state['filtro_dashboard'] = 'total'
 
@@ -198,7 +211,6 @@ if check_password():
             for index, row in df_lista.iterrows():
                 dias_espera = (data_hoje - row['Data_Convertida']).days if pd.notna(row['Data_Convertida']) else 0
                 
-                # Regras visuais customizadas para cada item listado
                 if row['Status'] == 'Concluido':
                     tag_status = f"✅ FINALIZADO" + (f" [Prioridade {row['Prioridade_Regulacao']}]" if row['Prioridade_Regulacao'] else "")
                 elif row['Status'] == 'Adiado':
@@ -212,20 +224,23 @@ if check_password():
                 info_interno = f" | Interno: {row['Interno']}" if pd.notna(row['Interno']) and str(row['Interno']).strip() != "" else ""
                 
                 with st.expander(f"{tag_status} | {row['Paciente']} | Espera: {dias_espera} dias{info_interno}"):
-                    col_info, col_acoes = st.columns([1.8, 2])
+                    # Divisão em 3 colunas em vez de 2, para isolar e apertar o código do protocolo
+                    col_prot, col_info, col_acoes = st.columns([1, 1.5, 2.5])
                     
-                    with col_info:
-                        st.markdown("**Copiar Número do Protocolo:**")
-                        # Caixa fixada com botão de cópia nativo permanente à direita
+                    with col_prot:
+                        st.markdown("**Protocolo:**")
+                        # Por estar em uma coluna estreita, o botão de copiar fica encostado no número
                         st.code(row['Protocolo'], language=None)
+
+                    with col_info:
                         st.write(f"**Serviço:** {row['Servico']}")
-                        st.write(f"**Data da Solicitação:** {row['Data_Convertida'].strftime('%d/%m/%Y') if pd.notna(row['Data_Convertida']) else 'N/A'}")
+                        st.write(f"**Data:** {row['Data_Convertida'].strftime('%d/%m/%Y') if pd.notna(row['Data_Convertida']) else 'N/A'}")
 
                     with col_acoes:
                         if row['Status'] != 'Concluido':
                             obs_atual = row['Observacoes'] if pd.notna(row['Observacoes']) else ""
                             nova_obs = st.text_area("Anotações / Evolução do Caso:", value=obs_atual, key=f"obs_{row['ID']}", height=68)
-                            if st.button("💾 Atualizar Histórico/Notas", key=f"btn_obs_{row['ID']}"):
+                            if st.button("💾 Atualizar Notas", key=f"btn_obs_{row['ID']}"):
                                 df.at[index, 'Observacoes'] = nova_obs
                                 df_salvar = df.drop(columns=['Data_Convertida', 'Data_Retorno_DT'], errors='ignore')
                                 conn.update(worksheet="Dados", data=df_salvar)
@@ -236,7 +251,7 @@ if check_password():
                             c_b1, c_b2 = st.columns(2)
                             
                             with c_b1:
-                                prio = st.selectbox("Prioridade da Regulação (Opcional):", ["", "A", "B", "C", "D"], key=f"prio_{row['ID']}")
+                                prio = st.selectbox("Prioridade (Opcional):", ["", "A", "B", "C", "D"], key=f"prio_{row['ID']}")
                                 if st.button("✅ Concluir/Regular", key=f"ok_{row['ID']}", use_container_width=True):
                                     df.at[index, 'Status'] = 'Concluido'
                                     df.at[index, 'Prioridade_Regulacao'] = prio
@@ -245,7 +260,7 @@ if check_password():
                                     st.rerun()
                                     
                             with c_b2:
-                                dias_a = st.number_input("Estipular dias de adiamento:", min_value=1, value=7, step=1, key=f"dias_{row['ID']}")
+                                dias_a = st.number_input("Dias de adiamento:", min_value=1, value=7, step=1, key=f"dias_{row['ID']}")
                                 if st.button("⏳ Confirmar Adiamento", key=f"adiar_{row['ID']}", use_container_width=True):
                                     nova_data = (data_hoje + timedelta(days=dias_a)).strftime("%Y-%m-%d")
                                     df.at[index, 'Status'] = 'Adiado'
@@ -254,7 +269,7 @@ if check_password():
                                     conn.update(worksheet="Dados", data=df_salvar)
                                     st.rerun()
                         else:
-                            st.info(f"Protocolo finalizado. Notas registradas: {row['Observacoes'] if row['Observacoes'] else 'Nenhuma'}")
+                            st.info(f"Protocolo finalizado. Notas: {row['Observacoes'] if row['Observacoes'] else 'Nenhuma'}")
 
     # ==========================================
     # ABA 2: BUSCA AVANÇADA E RELATÓRIOS
